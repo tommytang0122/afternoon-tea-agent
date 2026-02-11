@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.ubereats.com)",
+      "WebSearch",
+      "Bash(pip install:*)",
+      "Bash(pytest:*)",
+      "Bash(sqlite3:*)",
+      "Bash(python3:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(claude mcp add context7 -- npx -y @upstash/context7-mcp --api-key ctx7sk-ceb35a81-dc63-4d32-9dd9-64830444701c)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs"
+    ]
+  }
+}

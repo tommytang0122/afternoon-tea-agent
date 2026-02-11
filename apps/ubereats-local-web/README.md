@@ -24,6 +24,8 @@ cp .env.example .env
 python3 server.py --seed-demo
 ```
 
+若你之前已 seed 過舊版本資料，重新執行一次可更新 demo 連結。
+
 4. 啟動服務
 
 ```bash
@@ -39,6 +41,20 @@ python3 server.py
 - `GET /api/random-selection`
 
 成功回傳 `result.drinks`、`result.foods` 與 `copy_text`。
+
+## Smoke Test
+
+可用專案根目錄的腳本一次驗證成功/失敗流程：
+
+```bash
+cd ../..
+chmod +x scripts/smoke_test.sh
+./scripts/smoke_test.sh
+```
+
+預期輸出最後一行為：
+
+`[4/4] Smoke test passed.`
 
 ## 資料庫假設
 
