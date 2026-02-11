@@ -70,17 +70,52 @@ CLASSIFICATION_PROMPT = """\
 以下是店家資料：
 """
 
+CATEGORY_CLASSIFICATION_PROMPT = """\
+你是一個下午茶推薦助手。以下是從 Uber Eats 爬取的店家資料（JSON 格式），
+每筆包含店名、URL、以及 Uber Eats 的原始分類（ue_category）。
+
+請你：
+1. 排除「大賣場、超市、量販、生鮮雜貨型商店」，例如：Costco、家樂福、全聯、Uber Eats 優市。
+2. 排除明顯不適合下午茶的店（便當店、火鍋店、重正餐導向店家等）。
+3. 判定每家店的下午茶推薦類型 `type`，只能是以下其中一種：「甜食」「鹹食」「冷飲」「熱飲」「其他」。
+4. 判定每家店的主要店型 `store_category`，只能是以下 5 類其中一種：
+   - 「飲料店」
+   - 「甜點/烘焙」
+   - 「輕食/早午餐」
+   - 「速食/炸物」
+   - 「正餐主食」
+5. 為每家店加上相關 tags。
+
+請只輸出 JSON，不要加任何說明文字。格式如下：
+{
+  "stores": [
+    {
+      "name": "店名",
+      "type": "甜食|鹹食|冷飲|熱飲|其他",
+      "store_category": "飲料店|甜點/烘焙|輕食/早午餐|速食/炸物|正餐主食",
+      "tags": ["標籤1", "標籤2"],
+      "url": "原始 URL"
+    }
+  ]
+}
+
+以下是店家資料：
+"""
+
 
 def classify_stores(raw_stores: list[dict],
                     api_key: str | None = None) -> dict:
     """Call Gemini API to classify raw stores into afternoon tea candidates.
+
+    Auto-detects mode: if stores have ``menu_items``, uses the full prompt
+    (legacy mode); otherwise uses the category-aware prompt.
 
     Args:
         raw_stores: List of store dicts from raw_stores.json.
         api_key: Gemini API key. Falls back to GEMINI_API_KEY env var.
 
     Returns:
-        Dict with generated_at, store_count, and stores fields.
+        Dict with generated_at, store_count, pipeline_mode, and stores fields.
     """
     if api_key is None:
         api_key = os.getenv("GEMINI_API_KEY", "")
@@ -90,12 +125,20 @@ def classify_stores(raw_stores: list[dict],
             "Set it in .env or pass it as an argument."
         )
 
+    has_menu = any("menu_items" in s for s in raw_stores)
+    if has_menu:
+        prompt_template = CLASSIFICATION_PROMPT
+        pipeline_mode = "full"
+    else:
+        prompt_template = CATEGORY_CLASSIFICATION_PROMPT
+        pipeline_mode = "category"
+
     client = genai.Client(api_key=api_key)
 
-    prompt = CLASSIFICATION_PROMPT + json.dumps(raw_stores, ensure_ascii=False)
+    prompt = prompt_template + json.dumps(raw_stores, ensure_ascii=False)
 
-    log.info("Calling Gemini API (%s) with %d stores …",
-             GEMINI_MODEL, len(raw_stores))
+    log.info("Calling Gemini API (%s) with %d stores [mode=%s] …",
+             GEMINI_MODEL, len(raw_stores), pipeline_mode)
 
     response = client.models.generate_content(
         model=GEMINI_MODEL,
@@ -106,7 +149,6 @@ def classify_stores(raw_stores: list[dict],
     # Strip markdown code fences if present
     if response_text.startswith("```"):
         lines = response_text.split("\n")
-        # Remove first line (```json) and last line (```)
         lines = [l for l in lines if not l.strip().startswith("```")]
         response_text = "\n".join(lines)
 
@@ -115,6 +157,7 @@ def classify_stores(raw_stores: list[dict],
     stores = result.get("stores", [])
     output = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "pipeline_mode": pipeline_mode,
         "store_count": len(stores),
         "stores": stores,
     }

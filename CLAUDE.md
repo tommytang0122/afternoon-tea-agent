@@ -16,9 +16,11 @@ cd apps/ubereats-local-web
 cp .env.example .env           # fill in UBER_EATS_TAIPEI_ADDRESS and GEMINI_API_KEY
 
 # Run pipeline (crawl + classify)
-python pipeline.py             # full pipeline
-python pipeline.py --skip-crawl  # only classify (uses existing raw_stores.json)
-python pipeline.py --headed    # run crawler with visible browser
+python pipeline.py                                # category mode (default, fast)
+python pipeline.py --legacy                       # legacy mode (crawl menus)
+python pipeline.py --skip-crawl                   # only classify (uses existing raw_stores.json)
+python pipeline.py --headed                       # run crawler with visible browser
+python pipeline.py --categories "珍珠奶茶,咖啡和茶"  # specific categories only
 
 # Tests
 pytest apps/ubereats-local-web/tests/                      # all tests
@@ -36,7 +38,7 @@ pytest apps/ubereats-local-web/tests/test_pipeline.py      # pipeline tests
 
 ### 檔案結構
 
-- **`apps/ubereats-local-web/crawler.py`** — Playwright 爬蟲，爬取 Uber Eats 店家與菜單，輸出 `dataset/raw_stores.json`
+- **`apps/ubereats-local-web/crawler.py`** — Playwright 爬蟲，預設按 UE 分類爬取店名+URL（category mode），也支援爬菜單（legacy mode）
 - **`apps/ubereats-local-web/classifier.py`** — 呼叫 Gemini API 篩選適合下午茶的店家，輸出 `dataset/afternoon_tea.json`
 - **`apps/ubereats-local-web/pipeline.py`** — 一條龍 script：crawl → classify → done
 - **`apps/ubereats-local-web/dataset/`** — 存放 JSON 資料檔（不 commit）
@@ -44,14 +46,23 @@ pytest apps/ubereats-local-web/tests/test_pipeline.py      # pipeline tests
 ### 資料格式
 
 **`dataset/raw_stores.json`** — 爬蟲原始資料：
+
+Category mode（預設）：
+```json
+[{"name": "店名", "url": "...", "ue_category": "珍珠奶茶"}]
+```
+
+Legacy mode（`--legacy`）：
 ```json
 [{"name": "店名", "category": "", "url": "...", "menu_items": [{"name": "品名", "price_twd": 120}], "avg_price": 105}]
 ```
 
 **`dataset/afternoon_tea.json`** — Gemini 篩選後：
 ```json
-{"generated_at": "...", "store_count": 18, "stores": [{"name": "店名", "type": "手搖飲", "tags": ["飲料"], "url": "...", "avg_price": 105, "top_items": ["拿鐵 $120"]}]}
+{"generated_at": "...", "pipeline_mode": "category", "store_count": 18, "stores": [{"name": "店名", "type": "冷飲", "store_category": "飲料店", "tags": ["手搖飲"], "url": "..."}]}
 ```
+
+Legacy mode 時 stores 會額外包含 `avg_price` 和 `top_items`。
 
 ### 店家分類
 
@@ -94,15 +105,15 @@ pytest apps/ubereats-local-web/tests/test_pipeline.py      # pipeline tests
    - 使用者未指定 → 預設 2 間 `輕食/早午餐` + 2 間 `飲料店`
    - 使用者用口語（如「手搖飲」「炸物」）時，自動對應到正確的 store_category
    - 4 間必須不同店
-3. 回覆格式（根據實際店型替換圖示和標題）：
+3. 回覆格式（根據實際店型替換圖示和標題，有 avg_price 時顯示，沒有則省略）：
 
    🥪 輕食/早午餐
-   1. 店家名 | 輕食/早午餐 | 平均 $XXX | URL
-   2. 店家名 | 輕食/早午餐 | 平均 $XXX | URL
+   1. 店家名 | 輕食/早午餐 | URL
+   2. 店家名 | 輕食/早午餐 | URL
 
    🧋 飲料店
-   3. 店家名 | 飲料店 | 平均 $XXX | URL
-   4. 店家名 | 飲料店 | 平均 $XXX | URL
+   3. 店家名 | 飲料店 | URL
+   4. 店家名 | 飲料店 | URL
 
 4. 將推薦結果 append 到 `apps/ubereats-local-web/dataset/history.jsonl`
    格式：`{"timestamp": "...", "query": "使用者輸入", "result": [...]}`

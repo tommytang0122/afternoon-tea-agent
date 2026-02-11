@@ -77,6 +77,7 @@ class TestClassifyStores:
         assert result["stores"][0]["type"] == "熱飲"
         assert result["stores"][0]["store_category"] == "飲料店"
         assert result["generated_at"] is not None
+        assert result["pipeline_mode"] == "full"
 
     def test_strips_markdown_fences(self, classifier_module):
         fenced = "```json\n" + json.dumps(MOCK_GEMINI_RESPONSE, ensure_ascii=False) + "\n```"
@@ -122,3 +123,66 @@ class TestRunClassification:
             saved = json.load(f)
         assert saved["store_count"] == 2
         assert len(saved["stores"]) == 2
+
+
+SAMPLE_CATEGORY_STORES = [
+    {
+        "name": "晨光咖啡",
+        "url": "https://www.ubereats.com/tw/store/morning-coffee/abc123",
+        "ue_category": "咖啡和茶",
+    },
+    {
+        "name": "甜點角落",
+        "url": "https://www.ubereats.com/tw/store/dessert-corner/def456",
+        "ue_category": "烘焙食品",
+    },
+]
+
+MOCK_CATEGORY_GEMINI_RESPONSE = {
+    "stores": [
+        {
+            "name": "晨光咖啡",
+            "type": "熱飲",
+            "store_category": "飲料店",
+            "tags": ["咖啡"],
+            "url": "https://www.ubereats.com/tw/store/morning-coffee/abc123",
+        },
+        {
+            "name": "甜點角落",
+            "type": "甜食",
+            "store_category": "甜點/烘焙",
+            "tags": ["蛋糕"],
+            "url": "https://www.ubereats.com/tw/store/dessert-corner/def456",
+        },
+    ]
+}
+
+
+class TestCategoryModeAutoDetect:
+    def test_category_mode_when_no_menu_items(self, classifier_module):
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_mock_response(
+            json.dumps(MOCK_CATEGORY_GEMINI_RESPONSE, ensure_ascii=False)
+        )
+
+        with patch.object(classifier_module.genai, "Client", return_value=mock_client):
+            result = classifier_module.classify_stores(
+                SAMPLE_CATEGORY_STORES, api_key="fake-key"
+            )
+
+        assert result["pipeline_mode"] == "category"
+        assert result["store_count"] == 2
+        assert "avg_price" not in result["stores"][0]
+
+    def test_full_mode_when_menu_items_present(self, classifier_module):
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = _make_mock_response(
+            json.dumps(MOCK_GEMINI_RESPONSE, ensure_ascii=False)
+        )
+
+        with patch.object(classifier_module.genai, "Client", return_value=mock_client):
+            result = classifier_module.classify_stores(
+                SAMPLE_RAW_STORES, api_key="fake-key"
+            )
+
+        assert result["pipeline_mode"] == "full"
