@@ -34,6 +34,7 @@ MOCK_GEMINI_RESPONSE = {
         {
             "name": "晨光咖啡",
             "type": "熱飲",
+            "store_category": "飲料店",
             "tags": ["咖啡", "茶"],
             "url": "https://www.ubereats.com/tw/store/morning-coffee/abc123",
             "avg_price": 105,
@@ -42,6 +43,7 @@ MOCK_GEMINI_RESPONSE = {
         {
             "name": "甜點角落",
             "type": "甜食",
+            "store_category": "甜點/烘焙",
             "tags": ["蛋糕", "甜點"],
             "url": "https://www.ubereats.com/tw/store/dessert-corner/def456",
             "avg_price": 173,
@@ -73,6 +75,7 @@ class TestClassifyStores:
         assert len(result["stores"]) == 2
         assert result["stores"][0]["name"] == "晨光咖啡"
         assert result["stores"][0]["type"] == "熱飲"
+        assert result["stores"][0]["store_category"] == "飲料店"
         assert result["generated_at"] is not None
 
     def test_strips_markdown_fences(self, classifier_module):
