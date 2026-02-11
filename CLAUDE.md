@@ -50,8 +50,27 @@ pytest apps/ubereats-local-web/tests/test_pipeline.py      # pipeline tests
 
 **`dataset/afternoon_tea.json`** — Gemini 篩選後：
 ```json
-{"generated_at": "...", "store_count": 18, "stores": [{"name": "店名", "type": "熱飲", "tags": ["咖啡"], "url": "...", "avg_price": 105, "top_items": ["拿鐵 $120"]}]}
+{"generated_at": "...", "store_count": 18, "stores": [{"name": "店名", "type": "手搖飲", "tags": ["飲料"], "url": "...", "avg_price": 105, "top_items": ["拿鐵 $120"]}]}
 ```
+
+### 店家分類
+
+每家店有兩個分類欄位：
+
+**`type`**（品項類型）：`甜食` | `鹹食` | `冷飲` | `熱飲` | `其他`
+
+**`store_category`**（店型，推薦時的主要選取依據）：
+
+| store_category | 定義 | 圖示 |
+|----------------|------|------|
+| `飲料店` | 手搖飲、咖啡專賣 | 🧋 |
+| `輕食/早午餐` | 吐司、三明治、貝果、早午餐 | 🥪 |
+| `速食/炸物` | 炸雞、薯條、雞塊等鹹食零嘴 | 🍟 |
+| `甜點/烘焙` | 蛋糕、派、甜品專賣 | 🍰 |
+
+以下店型會被 Gemini 排除，不進入 `afternoon_tea.json`：
+- `正餐主食`：便當、飯類、麵類
+- 大賣場、超市、量販店
 
 ## Coding Conventions
 
@@ -69,20 +88,21 @@ pytest apps/ubereats-local-web/tests/test_pipeline.py      # pipeline tests
 
 當使用者詢問下午茶推薦時：
 1. 讀取 `apps/ubereats-local-web/dataset/afternoon_tea.json`
-2. 根據使用者需求（如「甜食+冷飲」）從 dataset 中挑選：
-   - 2 間符合第一種類型的店家
-   - 2 間符合第二種類型的店家
+2. 根據使用者需求，以 `store_category` 為主要選取依據：
+   - 使用者指定兩種店型（如「輕食/早午餐+飲料店」）→ 每種各 2 間
+   - 使用者只指定一種店型（如「飲料店」）→ 該店型 2 間 + 自動搭配另一店型 2 間
+   - 使用者未指定 → 預設 2 間 `輕食/早午餐` + 2 間 `飲料店`
+   - 使用者用口語（如「手搖飲」「炸物」）時，自動對應到正確的 store_category
    - 4 間必須不同店
-   - 如果使用者沒有指定類型，預設選 2 甜食 + 2 飲料（冷飲或熱飲）
-3. 回覆格式：
+3. 回覆格式（根據實際店型替換圖示和標題）：
 
-   🍰 甜食
-   1. 店家名 | 甜食 | 平均 $XXX | URL
-   2. 店家名 | 甜食 | 平均 $XXX | URL
+   🥪 輕食/早午餐
+   1. 店家名 | 輕食/早午餐 | 平均 $XXX | URL
+   2. 店家名 | 輕食/早午餐 | 平均 $XXX | URL
 
-   🧊 冷飲
-   3. 店家名 | 冷飲 | 平均 $XXX | URL
-   4. 店家名 | 冷飲 | 平均 $XXX | URL
+   🧋 飲料店
+   3. 店家名 | 飲料店 | 平均 $XXX | URL
+   4. 店家名 | 飲料店 | 平均 $XXX | URL
 
 4. 將推薦結果 append 到 `apps/ubereats-local-web/dataset/history.jsonl`
    格式：`{"timestamp": "...", "query": "使用者輸入", "result": [...]}`

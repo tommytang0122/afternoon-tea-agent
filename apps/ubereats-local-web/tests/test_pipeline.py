@@ -21,6 +21,7 @@ MOCK_CLASSIFIED = {
         {
             "name": "晨光咖啡",
             "type": "熱飲",
+            "store_category": "飲料店",
             "tags": ["咖啡"],
             "url": "https://www.ubereats.com/tw/store/morning-coffee/abc123",
             "avg_price": 120,
