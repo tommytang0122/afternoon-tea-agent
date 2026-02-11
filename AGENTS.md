@@ -27,6 +27,7 @@
 - Use `importlib` dynamic loading for module fixtures to avoid import-time side effects.
 
 ## Commit & Pull Request Guidelines
+- Before making any code changes, always create and switch to a new branch first (no direct coding on `main`).
 - Follow concise, imperative commit subjects (e.g., "Rewrite crawler for JSON output").
 - Keep commits scoped (one logical change per commit) and include context in the body when behavior changes.
 - PRs should include: summary, affected paths, and verification steps.

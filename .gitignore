@@ -2,6 +2,10 @@
 apps/ubereats-local-web/dataset/*.json
 apps/ubereats-local-web/dataset/history.jsonl
 
+# Windows ADS metadata artifacts
+*:Zone.Identifier
+*：Zone.Identifier
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

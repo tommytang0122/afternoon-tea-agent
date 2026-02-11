@@ -1,6 +1,8 @@
 ---
 title: 台北 Uber Eats 下午茶 Agent 設計稿
 date: 2026-02-09
+status: archived
+superseded_by: docs/implementation-plan.md
 tags:
   - kanjo-ai-assets
   - 架構方案
@@ -14,6 +16,9 @@ aliases:
 ---
 
 # 台北 Uber Eats 下午茶 Agent 設計稿
+
+> Archived 文件：此稿為 v1.0 設計，內容包含 SQLite / server / validator 等舊架構。  
+> 目前以 `docs/implementation-plan.md` 與 `apps/ubereats-local-web/{crawler.py,classifier.py,pipeline.py}` 為準。
 
 ## 概述
 

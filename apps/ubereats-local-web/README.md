@@ -1,65 +1,49 @@
 # ubereats-local-web
 
-本地 `localhost` 前端，按鈕隨機抽出 `2` 食物 + `2` 飲料（不同店家），並產生可複製文字：
+此目錄保留舊名稱，但目前是「資料預處理 pipeline」而非 Web server。
 
-`商店名+ubereat團購表單`
+## 目前功能
 
-## 啟動方式
+`pipeline.py` 會串接兩個步驟：
 
-1. 進入目錄
+1. `crawler.py`：用 Playwright 爬取 Uber Eats 店家與菜單，輸出 `dataset/raw_stores.json`
+2. `classifier.py`：呼叫 Gemini API 篩選下午茶店家，輸出 `dataset/afternoon_tea.json`
+
+## 使用方式
 
 ```bash
 cd apps/ubereats-local-web
-```
-
-2. 複製環境變數
-
-```bash
 cp .env.example .env
+# 編輯 .env：填入 UBER_EATS_TAIPEI_ADDRESS 與 GEMINI_API_KEY
 ```
 
-3. 可選：先建立 demo 資料
+完整執行（爬蟲 + 分類）：
 
 ```bash
-python3 server.py --seed-demo
+python pipeline.py
 ```
 
-若你之前已 seed 過舊版本資料，重新執行一次可更新 demo 連結。
-
-4. 啟動服務
+只做分類（沿用既有 `raw_stores.json`）：
 
 ```bash
-python3 server.py
+python pipeline.py --skip-crawl
 ```
 
-5. 開啟瀏覽器
-
-- `http://127.0.0.1:8080`
-
-## API
-
-- `GET /api/random-selection`
-
-成功回傳 `result.drinks`、`result.foods` 與 `copy_text`。
-
-## Smoke Test
-
-可用專案根目錄的腳本一次驗證成功/失敗流程：
+可視化瀏覽器（除錯用）：
 
 ```bash
-cd ../..
-chmod +x scripts/smoke_test.sh
-./scripts/smoke_test.sh
+python pipeline.py --headed
 ```
 
-預期輸出最後一行為：
+## 主要輸出
 
-`[4/4] Smoke test passed.`
+- `dataset/raw_stores.json`
+- `dataset/afternoon_tea.json`
 
-## 資料庫假設
+`dataset/` 屬於執行時資料，不會提交到 git。
 
-- `stores`
-- `items`
-- `classifications`
+## 測試
 
-系統會自動建立上述表。若你已有既有資料庫，可直接把 `.env` 的 `SQLITE_PATH` 指向你的檔案。
+```bash
+pytest apps/ubereats-local-web/tests/
+```

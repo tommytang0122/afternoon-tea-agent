@@ -59,6 +59,12 @@ pytest apps/ubereats-local-web/tests/test_pipeline.py      # pipeline tests
 - Prefer descriptive names over abbreviations.
 - Commits: imperative, concise subjects, one logical change per commit.
 
+## Git Workflow
+
+- **每次修改程式碼前必須先開 branch**，不直接在 main 上改。
+- Branch 命名：`feat/描述`、`fix/描述`、`refactor/描述`。
+- 完成後透過 PR 合併回 main。
+
 ## 下午茶推薦
 
 當使用者詢問下午茶推薦時：
