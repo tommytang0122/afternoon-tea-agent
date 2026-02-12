@@ -564,6 +564,10 @@ async def crawl_stores_by_category(
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
 
+    # Clear stale per-category files from previous runs
+    for old_file in output_root.glob("*.json"):
+        old_file.unlink()
+
     categorized: dict[str, list[dict]] = {}
 
     async with async_playwright() as pw:
