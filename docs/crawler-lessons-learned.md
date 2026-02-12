@@ -102,11 +102,58 @@ if not await _select_category_tag(page, testid, label):
 
 ---
 
+## 6. Category Chip 圖片未載入導致零寬度、無法點擊
+
+**現象**：`_select_category_tag()` 的 `scrollIntoView` + `click` 方案在首個分類（速食）成功後，後續 4 個分類全部 timeout 失敗，即使 `data-testid` 選擇器確實找到了元素（`state="attached"` 通過）。
+
+**原因**：Uber Eats 的 category chip 是 `<a>` 標籤，內容為圖片（非文字）。在 headless 模式下圖片不一定載入，導致：
+- `inner_text()` 回傳空字串
+- `bounding_box()` 顯示 `width: 0`（元素存在但無可見尺寸）
+- Playwright 的 `click()` 要求元素 visible，零寬度元素被判定為不可見，永遠 timeout
+
+```
+Bounding box: {'x': 1029, 'y': 434, 'width': 0, 'height': 64}
+→ width: 0，元素在 DOM 中但不可見
+```
+
+之前的 `scrollIntoView` 修正只解決了「元素在可視範圍外」的問題，但對「元素在 DOM 中但寬度為零」的情況無效。
+
+**修正**：
+- 不再嘗試點擊 chip，改為提取 `<a>` 標籤的 `href` 屬性
+- 直接用 `page.goto(url)` 導航到該分類的搜尋頁面
+- 保留 click 作為 fallback（當 href 不存在時）
+
+```python
+href = await locator.get_attribute("href")
+if href:
+    url = href if href.startswith("http") else f"{UBER_EATS_BASE}{href}"
+    await page.goto(url, wait_until="domcontentloaded")
+    await asyncio.sleep(_random_delay(2.0, 4.0))
+    return True
+# Fallback: try clicking if no href
+await locator.click(timeout=5000)
+```
+
+**修正前 vs 修正後**：
+
+| | 速食 | 早餐和早午餐 | 珍珠奶茶 | 咖啡和茶 | 烘焙食品 | 合計 |
+|--|------|-------------|---------|---------|---------|------|
+| 修正前（click） | 79 ✓ | ✗ | ✗ | ✗ | ✗ | 79 |
+| 修正後（href 導航） | 79 ✓ | 79 ✓ | 81 ✓ | 79 ✓ | 79 ✓ | 288 |
+
+**教訓**：
+- 爬蟲不應依賴「點擊」來觸發導航。`<a>` 標籤自帶 `href`，直接讀取 href 並 `goto()` 比模擬點擊更可靠、更快
+- Headless 模式下圖片行為與 headed 模式不同。圖片式 UI 元件（icon chip、image button）可能在 headless 下有零尺寸
+- 遇到 `click timeout` 時，優先檢查 `bounding_box()` 和 `is_visible()` 來判斷是定位問題還是渲染問題
+
+---
+
 ## 總結：爬蟲穩定性 Checklist
 
 | 項目 | 建議 |
 |------|------|
 | Rate limit | 限制分類數量，加入隨機延遲 |
+| 圖片式元素 | 優先用 href 導航，不依賴 click |
 | 水平滾動 | 用 JS `scrollIntoView` 而非 Playwright 內建 scroll |
 | SPA 導航 | 用 `networkidle` + 充足延遲 + 重試 |
 | 動態分類 | Graceful degradation，不硬性依賴特定分類 |

@@ -284,7 +284,12 @@ async def collect_store_links_from_current_view(page, max_stores: int) -> list[d
 
 async def _select_category_tag(page, category_testid: str,
                                category_label: str = "") -> bool:
-    """Click a category chip, scrolling the chip bar if needed."""
+    """Navigate to a category by extracting its href from the chip element.
+
+    Category chips on Uber Eats are <a> tags with image content that may
+    render with zero width in headless mode, making them unclickable.
+    Instead of clicking, we extract the href and navigate directly.
+    """
     # Wait for any chip to appear first (confirms feed is loaded)
     try:
         await page.locator(
@@ -298,17 +303,23 @@ async def _select_category_tag(page, category_testid: str,
     selectors = [f"[data-testid='{category_testid}']"]
     if category_label:
         selectors.extend([
-            f"[role='tab']:has-text('{category_label}')",
-            f"button:has-text('{category_label}')",
             f"a:has-text('{category_label}')",
+            f"[role='tab']:has-text('{category_label}')",
         ])
 
     for selector in selectors:
         locator = page.locator(selector).first
         try:
             await locator.wait_for(state="attached", timeout=8000)
-            # Chip bar is horizontal-scroll; dispatch scrollIntoView to
-            # bring off-screen chips into the viewport.
+            # Extract href and navigate directly (chips may be invisible
+            # due to unloaded images yielding zero width).
+            href = await locator.get_attribute("href")
+            if href:
+                url = href if href.startswith("http") else f"{UBER_EATS_BASE}{href}"
+                await page.goto(url, wait_until="domcontentloaded")
+                await asyncio.sleep(_random_delay(2.0, 4.0))
+                return True
+            # Fallback: try clicking if no href
             await locator.evaluate(
                 "el => el.scrollIntoView({behavior:'instant',block:'nearest',inline:'center'})"
             )
