@@ -614,25 +614,21 @@ async def crawl_stores_by_category(
                     for label in missing:
                         log.warning("Requested category not found on feed: %s", label)
 
-            output_idx = 1
-            for category_info in categories_to_crawl:
+            async def _crawl_one_category(
+                category_info: dict, idx: int, total: int,
+            ) -> int:
+                """Crawl a single category. Returns number of stores found."""
                 category = category_info["label"]
                 category_testid = category_info["testid"]
-                if category in EXCLUDED_CATEGORY_TAGS:
-                    log.info("Skipping excluded category: %s", category)
-                    continue
 
-                log.info("[%d/%d] Crawling category: %s",
-                         output_idx, len(categories_to_crawl), category)
+                log.info("[%d/%d] Crawling category: %s", idx, total, category)
 
-                # Navigate back to feed with full reload to reset chip bar
                 await page.goto(FEED_URL, wait_until="networkidle")
                 await asyncio.sleep(_random_delay(3.0, 5.0))
 
                 if not await _select_category_tag(
                     page, category_testid, category_label=category
                 ):
-                    # Retry once with a hard reload
                     log.info("Retrying category %s after reload …", category)
                     await page.reload(wait_until="networkidle")
                     await asyncio.sleep(_random_delay(3.0, 5.0))
@@ -641,22 +637,54 @@ async def crawl_stores_by_category(
                     ):
                         log.warning("Category chip not found: %s (%s)",
                                     category, category_testid)
-                        continue
+                        return 0
 
                 stores = await collect_store_links_from_current_view(
                     page, max_stores=max_stores_per_category
                 )
-                minimal_stores = _minimal_store_records(stores, ue_category=category)
+                minimal_stores = _minimal_store_records(
+                    stores, ue_category=category
+                )
                 categorized[category] = minimal_stores
 
-                filename = f"{output_idx:02d}_{_sanitize_filename(category)}.json"
+                filename = f"{idx:02d}_{_sanitize_filename(category)}.json"
                 file_path = output_root / filename
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(minimal_stores, f, ensure_ascii=False, indent=2)
 
                 log.info("Saved %d stores to %s", len(minimal_stores), file_path)
                 await asyncio.sleep(_random_delay(1.0, 2.5))
-                output_idx += 1
+                return len(minimal_stores)
+
+            # First pass
+            crawlable = [
+                c for c in categories_to_crawl
+                if c["label"] not in EXCLUDED_CATEGORY_TAGS
+            ]
+            empty_categories: list[dict] = []
+            for output_idx, cat_info in enumerate(crawlable, 1):
+                count = await _crawl_one_category(
+                    cat_info, output_idx, len(crawlable)
+                )
+                if count == 0:
+                    empty_categories.append(cat_info)
+
+            # Retry categories that returned 0 stores
+            if empty_categories:
+                labels = ", ".join(c["label"] for c in empty_categories)
+                log.info("Retrying %d empty categories: %s",
+                         len(empty_categories), labels)
+                for cat_info in empty_categories:
+                    idx = next(
+                        i for i, c in enumerate(crawlable, 1)
+                        if c["label"] == cat_info["label"]
+                    )
+                    count = await _crawl_one_category(
+                        cat_info, idx, len(crawlable)
+                    )
+                    if count == 0:
+                        log.warning("Category %s still empty after retry; "
+                                    "giving up.", cat_info["label"])
 
         finally:
             await browser.close()
