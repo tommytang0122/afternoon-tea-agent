@@ -143,7 +143,13 @@ def classify_stores(raw_stores: list[dict],
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=prompt,
+        config={"max_output_tokens": 65536},
     )
+
+    # Log finish reason to diagnose truncation
+    if response.candidates:
+        fr = response.candidates[0].finish_reason
+        log.info("Gemini finish_reason: %s", fr)
 
     response_text = response.text.strip()
     # Strip markdown code fences if present
@@ -166,6 +172,48 @@ def classify_stores(raw_stores: list[dict],
     return output
 
 
+def classify_stores_batch(raw_stores: list[dict],
+                          api_key: str | None = None) -> dict:
+    """Classify stores in batches grouped by ``ue_category``.
+
+    Splits *raw_stores* by their ``ue_category`` field and calls
+    :func:`classify_stores` once per group.  Results are merged and
+    deduplicated by URL.
+    """
+    groups: dict[str, list[dict]] = {}
+    for store in raw_stores:
+        key = store.get("ue_category", "")
+        groups.setdefault(key, []).append(store)
+
+    all_stores: list[dict] = []
+    seen_urls: set[str] = set()
+    pipeline_mode = "category"
+
+    for idx, (category, batch) in enumerate(groups.items(), 1):
+        label = category or "(未分類)"
+        log.info("[%d/%d] Classifying batch: %s (%d stores)",
+                 idx, len(groups), label, len(batch))
+
+        result = classify_stores(batch, api_key=api_key)
+        pipeline_mode = result.get("pipeline_mode", pipeline_mode)
+
+        for store in result.get("stores", []):
+            url = store.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                all_stores.append(store)
+
+    output = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "pipeline_mode": pipeline_mode,
+        "store_count": len(all_stores),
+        "stores": all_stores,
+    }
+    log.info("Batch classification done: %d afternoon tea stores total.",
+             len(all_stores))
+    return output
+
+
 def run_classification(input_path: str | None = None,
                        output_path: str | None = None,
                        api_key: str | None = None) -> dict:
@@ -180,7 +228,7 @@ def run_classification(input_path: str | None = None,
 
     log.info("Loaded %d stores from %s", len(raw_stores), input_path)
 
-    result = classify_stores(raw_stores, api_key=api_key)
+    result = classify_stores_batch(raw_stores, api_key=api_key)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
