@@ -148,6 +148,69 @@ await locator.click(timeout=5000)
 
 ---
 
+## 7. Gemini API 輸出截斷（JSON 不完整）
+
+**現象**：爬蟲成功爬到 308 間店後，Gemini 分類步驟連續失敗，拋出 `JSONDecodeError: Unterminated string`。
+
+**原因**：308 間店的完整 JSON 一次塞進 prompt，Gemini 需要回傳每間通過篩選的店的完整資訊（name, type, store_category, tags, url），輸出 token 數超過限制被截斷。即使加了 `max_output_tokens: 65536` 仍然不夠（thinking token 也佔配額）。
+
+**修正**：
+- 新增 `classify_stores_batch()` 函式，按 `ue_category` 欄位分組
+- 每組（~60-80 間）獨立呼叫一次 `classify_stores()`
+- 合併所有批次結果，按 URL 去重
+
+```
+raw_stores.json (308 間)
+  ├─ 速食 (79) → Gemini call 1 → 27 stores ✓
+  ├─ 早餐和早午餐 (72) → Gemini call 2 → 33 stores ✓
+  ├─ 珍珠奶茶 (74) → Gemini call 3 → 69 stores ✓
+  ├─ 咖啡和茶 (55) → Gemini call 4 → 53 stores ✓
+  └─ 烘焙食品 (42) → Gemini call 5 → 45 stores ✓
+  → 全部 FinishReason.STOP，無截斷
+```
+
+**教訓**：
+- LLM API 的輸出有 token 上限，不能假設任意長度的 JSON 都能完整回傳
+- 分批呼叫是最穩健的做法，即使犧牲一些 API call 數量
+- 加入 `finish_reason` 日誌有助於快速判斷是截斷還是格式問題
+
+---
+
+## 8. 分類偶發爬到 0 間店
+
+**現象**：5 個分類中，烘焙食品偶爾爬到 0 間店，但手動重試立刻就能爬到。
+
+**原因**：category chip 的 href 導航到搜尋頁面後，店家列表可能因頁面載入時序問題尚未渲染完成，`collect_store_links_from_current_view()` 在 3 輪無新增後就停止滾動。
+
+**修正**：
+- 將爬取單一分類的邏輯抽成 `_crawl_one_category()` helper
+- 第一輪爬完所有分類後，記錄回傳 0 筆的分類
+- 全部爬完後統一重試 0 筆的分類一次
+- 重試仍為 0 則 log warning 並放棄
+
+```python
+# 第一輪
+empty_categories = []
+for cat in crawlable:
+    count = await _crawl_one_category(cat, ...)
+    if count == 0:
+        empty_categories.append(cat)
+
+# 重試 0 筆的分類
+if empty_categories:
+    for cat in empty_categories:
+        count = await _crawl_one_category(cat, ...)
+        if count == 0:
+            log.warning("Category %s still empty; giving up.", cat["label"])
+```
+
+**教訓**：
+- 網頁爬蟲應預期偶發性失敗，在合理範圍內加入重試機制
+- 重試時機選在「全部分類跑完後」而非「立即重試」，讓時間差增加成功機率
+- 重試次數限制為 1 次，避免無限迴圈或觸發 rate limit
+
+---
+
 ## 總結：爬蟲穩定性 Checklist
 
 | 項目 | 建議 |
@@ -158,3 +221,5 @@ await locator.click(timeout=5000)
 | SPA 導航 | 用 `networkidle` + 充足延遲 + 重試 |
 | 動態分類 | Graceful degradation，不硬性依賴特定分類 |
 | CLI 設計 | 提供語意明確的單一 flag |
+| LLM 輸出 | 分批呼叫，避免單次輸出過長被截斷 |
+| 偶發失敗 | 全部跑完後統一重試 0 筆的分類 |
