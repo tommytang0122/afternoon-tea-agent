@@ -2,10 +2,9 @@
 """End-to-end pipeline: crawl Uber Eats → classify with Gemini → done.
 
 Usage:
-    python pipeline.py                    # category mode (default, fast)
-    python pipeline.py --legacy           # legacy mode (crawl menus)
-    python pipeline.py --skip-crawl       # skip crawling, only classify
-    python pipeline.py --headed           # run crawler with visible browser
+    python pipeline.py                                # default (fast)
+    python pipeline.py --skip-crawl                   # skip crawling, only classify
+    python pipeline.py --headed                       # run crawler with visible browser
     python pipeline.py --categories "珍珠奶茶,咖啡和茶"  # specific categories
 """
 
@@ -42,7 +41,6 @@ def load_dotenv(dotenv_path: Path) -> None:
 
 
 def run_pipeline(skip_crawl: bool = False, headed: bool = False,
-                 legacy: bool = False,
                  categories: list[str] | None = None) -> None:
     """Run the full data preprocessing pipeline."""
     load_dotenv(ROOT_DIR / ".env")
@@ -59,42 +57,27 @@ def run_pipeline(skip_crawl: bool = False, headed: bool = False,
                 "Copy .env.example to .env and fill in your delivery address."
             )
 
-        if legacy:
-            log.info("=== Step 1: Crawling Uber Eats (legacy mode) ===")
-            from crawler import crawl_stores
+        log.info("=== Step 1: Crawling Uber Eats ===")
+        from crawler import crawl_stores_by_category, merge_category_stores
 
-            max_stores = int(os.getenv("MAX_STORES_PER_CRAWL", "30"))
-            stores = asyncio.run(
-                crawl_stores(
-                    address,
-                    output_path=raw_stores_path,
-                    headed=headed,
-                    max_stores=max_stores,
-                )
+        max_per_category = int(os.getenv("MAX_STORES_PER_CATEGORY", "80"))
+        categorized = asyncio.run(
+            crawl_stores_by_category(
+                address,
+                headed=headed,
+                categories=categories,
+                max_stores_per_category=max_per_category,
+                afternoon_tea_only=not categories,
             )
-            log.info("Crawl complete: %d stores saved.", len(stores))
-        else:
-            log.info("=== Step 1: Crawling Uber Eats (category mode) ===")
-            from crawler import crawl_stores_by_category, merge_category_stores
+        )
+        merged = merge_category_stores(categorized)
 
-            max_per_category = int(os.getenv("MAX_STORES_PER_CATEGORY", "80"))
-            categorized = asyncio.run(
-                crawl_stores_by_category(
-                    address,
-                    headed=headed,
-                    categories=categories,
-                    max_stores_per_category=max_per_category,
-                    afternoon_tea_only=not categories,
-                )
-            )
-            merged = merge_category_stores(categorized)
+        Path(raw_stores_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(raw_stores_path, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
 
-            Path(raw_stores_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(raw_stores_path, "w", encoding="utf-8") as f:
-                json.dump(merged, f, ensure_ascii=False, indent=2)
-
-            log.info("Crawl complete: %d stores across %d categories.",
-                     len(merged), len(categorized))
+        log.info("Crawl complete: %d stores across %d categories.",
+                 len(merged), len(categorized))
     else:
         log.info("=== Step 1: Skipped (--skip-crawl) ===")
         if not Path(raw_stores_path).exists():
@@ -122,7 +105,6 @@ def run_pipeline(skip_crawl: bool = False, headed: bool = False,
 def main() -> None:
     skip_crawl = "--skip-crawl" in sys.argv
     headed = "--headed" in sys.argv
-    legacy = "--legacy" in sys.argv
 
     categories = None
     args = sys.argv[1:]
@@ -131,8 +113,7 @@ def main() -> None:
             categories = [c.strip() for c in args[i + 1].split(",") if c.strip()]
             break
 
-    run_pipeline(skip_crawl=skip_crawl, headed=headed,
-                 legacy=legacy, categories=categories)
+    run_pipeline(skip_crawl=skip_crawl, headed=headed, categories=categories)
 
 
 if __name__ == "__main__":
