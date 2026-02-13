@@ -16,8 +16,7 @@ cd apps/ubereats-local-web
 cp .env.example .env           # fill in UBER_EATS_TAIPEI_ADDRESS and GEMINI_API_KEY
 
 # Run pipeline (crawl + classify)
-python pipeline.py                                # category mode (default, fast)
-python pipeline.py --legacy                       # legacy mode (crawl menus)
+python pipeline.py                                # default (fast)
 python pipeline.py --skip-crawl                   # only classify (uses existing raw_stores.json)
 python pipeline.py --headed                       # run crawler with visible browser
 python pipeline.py --categories "珍珠奶茶,咖啡和茶"  # specific categories only
@@ -27,6 +26,9 @@ pytest apps/ubereats-local-web/tests/                      # all tests
 pytest apps/ubereats-local-web/tests/test_crawler.py       # crawler tests
 pytest apps/ubereats-local-web/tests/test_classifier.py    # classifier tests
 pytest apps/ubereats-local-web/tests/test_pipeline.py      # pipeline tests
+
+# Regression test (run after major changes)
+bash scripts/regression_test.sh
 ```
 
 ## Architecture
@@ -38,31 +40,23 @@ pytest apps/ubereats-local-web/tests/test_pipeline.py      # pipeline tests
 
 ### 檔案結構
 
-- **`apps/ubereats-local-web/crawler.py`** — Playwright 爬蟲，預設按 UE 分類爬取店名+URL（category mode），也支援爬菜單（legacy mode）
+- **`apps/ubereats-local-web/crawler.py`** — Playwright 爬蟲，按 UE 分類爬取店名+URL
 - **`apps/ubereats-local-web/classifier.py`** — 呼叫 Gemini API 篩選適合下午茶的店家，輸出 `dataset/afternoon_tea.json`
+- **`apps/ubereats-local-web/prompts.py`** — Gemini 分類用的 prompt 模板
 - **`apps/ubereats-local-web/pipeline.py`** — 一條龍 script：crawl → classify → done
 - **`apps/ubereats-local-web/dataset/`** — 存放 JSON 資料檔（不 commit）
 
 ### 資料格式
 
 **`dataset/raw_stores.json`** — 爬蟲原始資料：
-
-Category mode（預設）：
 ```json
 [{"name": "店名", "url": "...", "ue_category": "珍珠奶茶"}]
-```
-
-Legacy mode（`--legacy`）：
-```json
-[{"name": "店名", "category": "", "url": "...", "menu_items": [{"name": "品名", "price_twd": 120}], "avg_price": 105}]
 ```
 
 **`dataset/afternoon_tea.json`** — Gemini 篩選後：
 ```json
 {"generated_at": "...", "pipeline_mode": "category", "store_count": 18, "stores": [{"name": "店名", "type": "冷飲", "store_category": "飲料店", "tags": ["手搖飲"], "url": "..."}]}
 ```
-
-Legacy mode 時 stores 會額外包含 `avg_price` 和 `top_items`。
 
 ### 店家分類
 
@@ -79,8 +73,8 @@ Legacy mode 時 stores 會額外包含 `avg_price` 和 `top_items`。
 | `速食/炸物` | 炸雞、薯條、雞塊等鹹食零嘴 | 🍟 |
 | `甜點/烘焙` | 蛋糕、派、甜品專賣 | 🍰 |
 
-以下店型會被 Gemini 排除，不進入 `afternoon_tea.json`：
-- `正餐主食`：便當、飯類、麵類
+以下店家會被 Gemini 排除，不進入 `afternoon_tea.json`：
+- 正餐導向：便當、飯類、麵類、火鍋、滷味、鐵板燒、壽司
 - 大賣場、超市、量販店
 
 ## Coding Conventions
@@ -105,7 +99,7 @@ Legacy mode 時 stores 會額外包含 `avg_price` 和 `top_items`。
    - 使用者未指定 → 預設 2 間 `輕食/早午餐` + 2 間 `飲料店`
    - 使用者用口語（如「手搖飲」「炸物」）時，自動對應到正確的 store_category
    - 4 間必須不同店
-3. 回覆格式（根據實際店型替換圖示和標題，有 avg_price 時顯示，沒有則省略）：
+3. 回覆格式（根據實際店型替換圖示和標題）：
 
    🥪 輕食/早午餐
    1. 店家名 | 輕食/早午餐 | URL
